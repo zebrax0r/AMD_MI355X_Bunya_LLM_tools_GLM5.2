@@ -387,6 +387,20 @@ you of this. (For a fuller gfx942 treatment see the MI325X sibling repo.)
   default. If you're on an older copy, either update or run with
   `export APPTAINERENV_SGLANG_SET_CPU_AFFINITY=0` before `serve`, or allocate the
   whole node's CPUs (`--cpus-per-task=384` / `--exclusive`).
+- **Crash during CUDA-graph capture: `.aiter/jit/module_*.so: undefined symbol`**
+  (e.g. `getPaddedM`): aiter JIT-compiles some kernels at runtime and caches the
+  `.so` files in `$HOME/.aiter/jit` (your home is bind-mounted into the
+  container, so the cache persists across runs). If a startup was **killed
+  mid-compile** — which is easy to do while iterating — the cached module is
+  truncated and every later run reloads the broken copy. Fix: clear it and
+  restart —
+  ```bash
+  ./serve-glm52.sh stop
+  rm -rf ~/.aiter        # (and ~/.triton if a triton kernel is the culprit)
+  ./serve-glm52.sh serve --detach
+  ```
+  It recompiles cleanly on first use (adds ~a minute). Note this cache also eats
+  your home file-quota — see `rquota`.
 - **No speculative decoding**: MTP/EAGLE draft kernels aren't validated on ROCm
   for this model yet, so no `--speculative-*` flags are passed.
 - **`--enable-aiter-allreduce-fusion`** comes from the wafer.ai post. If you hit
