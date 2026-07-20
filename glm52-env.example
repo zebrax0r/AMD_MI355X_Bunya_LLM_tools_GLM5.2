@@ -22,8 +22,11 @@ export HF_TOKEN_FILE="${HF_TOKEN_FILE:-}"
 
 # ── Container image (.sif) ──────────────────────────────────────────────────
 
-# Where the Apptainer .sif is stored (built once with './serve-glm52.sh pull').
-# Defaults to $MODEL_CACHE_DIR/glm52-mi355x.sif if left empty.
+# Path to the Apptainer image FILE (built once with './serve-glm52.sh pull').
+# This must be a .sif file, NOT a directory, e.g.
+#   export SIF_PATH="/scratch/user/$USER/containers/glm52-mi355x.sif"
+# Defaults to $MODEL_CACHE_DIR/glm52-mi355x.sif if left empty. (If you point it
+# at a directory, the script appends the filename for you.)
 export SIF_PATH="${SIF_PATH:-}"
 
 # Apptainer cache/scratch. Keep these OFF /home (quota) — on scratch. Default is

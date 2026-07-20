@@ -133,6 +133,13 @@ mkdir -p "$MODEL_CACHE_DIR" 2>/dev/null || true
 
 # Default the .sif next to the HF cache if not set explicitly.
 SIF_PATH="${SIF_PATH:-$MODEL_CACHE_DIR/glm52-mi355x.sif}"
+# SIF_PATH must name a .sif FILE, not a directory. If it points at a directory
+# (or ends with '/'), treat it as a folder and drop the default filename in —
+# 'apptainer pull' otherwise refuses ("Image file already exists").
+if [[ "$SIF_PATH" == */ || -d "$SIF_PATH" ]]; then
+    SIF_PATH="${SIF_PATH%/}/glm52-mi355x.sif"
+    log "SIF_PATH was a directory — using $SIF_PATH"
+fi
 
 # Keep Apptainer's cache and scratch off /home (which has a tight quota) — point
 # them at scratch. Set both APPTAINER_* and the SINGULARITY_* aliases.
