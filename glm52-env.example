@@ -51,11 +51,14 @@ export SGLANG_IMAGE="${SGLANG_IMAGE:-docker://lmsysorg/sglang-rocm:v0.5.13.post1
 
 export PORT="${PORT:-30000}"
 
-# bun161 has 8x MI355X. The wafer.ai blog validated TP4 x DP2 (+ dp-attention)
-# as the throughput config for GLM-5.2 MXFP4 on MI355X. TP_SIZE * DP_SIZE must
-# equal the number of GPUs you allocate (8). Set DP_SIZE=1 for pure TP8.
-export TP_SIZE="${TP_SIZE:-4}"
-export DP_SIZE="${DP_SIZE:-2}"
+# An MI355X node has 8 GPUs. In SGLang, --tp IS the total GPU count, so use all
+# eight with TP_SIZE=8. --dp only applies with dp-attention and SUBDIVIDES those
+# GPUs for attention (it does NOT multiply the count); DP_SIZE must divide
+# TP_SIZE. Defaults are pure TP8 (best latency for a single opencode session).
+# For the wafer.ai high-concurrency throughput config, keep TP_SIZE=8 and set
+# DP_SIZE=2 (or 8) -> adds '--dp N --enable-dp-attention', still all 8 GPUs.
+export TP_SIZE="${TP_SIZE:-8}"
+export DP_SIZE="${DP_SIZE:-1}"
 
 export CONTEXT_LEN="${CONTEXT_LEN:-262144}"     # model supports up to 1M
 export MEM_FRACTION="${MEM_FRACTION:-0.85}"

@@ -16,7 +16,7 @@ MI355X node, you can go from clone to a working coding endpoint top to bottom.
 
 > **Coming from the MI325X repo?** This is the Bunya sibling. The big changes:
 > **Apptainer instead of podman**, the **MXFP4** model + `mi35x` image (gfx950),
-> **TP4×DP2**, and Bunya's SLURM (`admin_test` partition, `a_rcc` account, `sdf`
+> **TP8**, and Bunya's SLURM (`admin_test` partition, `a_rcc` account, `sdf`
 > QoS). Apptainer only exists on compute nodes, so everything runs inside an
 > allocation.
 
@@ -28,7 +28,7 @@ MI355X node, you can go from clone to a working coding endpoint top to bottom.
 |---|---|
 | Model | `amd/GLM-5.2-MXFP4` (753B MoE), served under the name `glm-5.2` |
 | Engine | SGLang, pinned ROCm image `lmsysorg/sglang-rocm:v0.5.13.post1-rocm720-mi35x-20260618` |
-| Parallelism | **TP4 × DP2** (+ `--enable-dp-attention`) across the node's 8 GPUs |
+| Parallelism | **TP8** across the node's 8 GPUs (optional dp-attention for throughput — see below) |
 | Context | 262,144 tokens by default (`CONTEXT_LEN`; model supports up to 1M) |
 | KV cache | FP8 (`fp8_e4m3`) |
 | Tool calling / thinking | `--tool-call-parser glm47 --reasoning-parser glm45` — required for opencode's agentic loop |
@@ -325,16 +325,22 @@ All knobs live in `glm52.env` (copied from `glm52-env.example`). Anything you
 | `SERVED_MODEL_NAME` | `glm-5.2` | Name clients use in the `model` field |
 | `SGLANG_IMAGE` | `docker://lmsysorg/sglang-rocm:v0.5.13.post1-rocm720-mi35x-20260618` | Container image (pulled into `SIF_PATH`) |
 | `PORT` | `30000` | Endpoint port on the node |
-| `TP_SIZE` | `4` | Tensor-parallel degree |
-| `DP_SIZE` | `2` | Data-parallel degree (adds `--dp N --enable-dp-attention`; set `1` for pure TP) |
+| `TP_SIZE` | `8` | Tensor-parallel degree = **total GPUs used** (8 = whole node) |
+| `DP_SIZE` | `1` | dp-attention groups; `>1` adds `--dp N --enable-dp-attention` and must divide `TP_SIZE` (does *not* change the GPU count) |
 | `CONTEXT_LEN` | `262144` | Max context length |
 | `MEM_FRACTION` | `0.85` | SGLang `--mem-fraction-static` |
 | `ENABLE_AITER_ALLREDUCE_FUSION` | `1` | Toggle `--enable-aiter-allreduce-fusion` (set `0` if allreduce crashes) |
 | `READY_TIMEOUT` | `7200` | Seconds to wait for health before giving up |
 | `EXTRA_SGLANG_ARGS` | — | Extra flags appended verbatim to `sglang.launch_server` |
 
-`TP_SIZE × DP_SIZE` must equal the number of GPUs you allocate (**8** on an MI355X node).
-The script warns if they don't match your allocation.
+**`TP_SIZE` is the total GPU count** — set it to the number of GPUs you allocate
+(**8** on an MI355X node). `DP_SIZE` only matters for dp-attention: it splits
+those same `TP_SIZE` GPUs into `DP_SIZE` attention groups (so it must divide
+`TP_SIZE`) and does *not* multiply the GPU count. Pure **TP8** (`DP_SIZE=1`) is
+the default and best for a single latency-sensitive opencode session; for
+high-concurrency throughput try `TP_SIZE=8 DP_SIZE=2`. The script warns if
+`TP_SIZE` doesn't match your allocation (e.g. `TP_SIZE=4` on an 8-GPU node leaves
+4 idle — which is the trap the earlier `TP4×DP2` default fell into).
 
 ---
 

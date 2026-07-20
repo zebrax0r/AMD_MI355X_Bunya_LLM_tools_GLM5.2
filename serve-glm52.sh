@@ -53,8 +53,8 @@ MODEL_ID="${MODEL_ID:-amd/GLM-5.2-MXFP4}"
 SERVED_MODEL_NAME="${SERVED_MODEL_NAME:-glm-5.2}"
 SGLANG_IMAGE="${SGLANG_IMAGE:-docker://lmsysorg/sglang-rocm:v0.5.13.post1-rocm720-mi35x-20260618}"
 PORT="${PORT:-30000}"
-TP_SIZE="${TP_SIZE:-4}"
-DP_SIZE="${DP_SIZE:-2}"
+TP_SIZE="${TP_SIZE:-8}"
+DP_SIZE="${DP_SIZE:-1}"
 CONTEXT_LEN="${CONTEXT_LEN:-262144}"
 MEM_FRACTION="${MEM_FRACTION:-0.85}"
 ENABLE_AITER_ALLREDUCE_FUSION="${ENABLE_AITER_ALLREDUCE_FUSION:-1}"
@@ -234,8 +234,14 @@ if command -v rocminfo >/dev/null 2>&1; then
     esac
 fi
 
-# World size = tensor-parallel x data-parallel. On an MI355X node that's 4x2 = 8 GPUs.
-WORLD=$(( TP_SIZE * DP_SIZE ))
+# In SGLang, --tp IS the total GPU count. --dp (with --enable-dp-attention) only
+# subdivides those GPUs for attention — it does NOT multiply the GPU count. So an
+# 8-GPU node means TP_SIZE=8 (optionally DP_SIZE=2 or 8 for dp-attention), and
+# DP_SIZE must divide TP_SIZE.
+GPUS_USED="$TP_SIZE"
+if [[ "${DP_SIZE:-1}" -gt 1 && $(( TP_SIZE % DP_SIZE )) -ne 0 ]]; then
+    die "DP_SIZE=$DP_SIZE must divide TP_SIZE=$TP_SIZE (dp-attention splits the $TP_SIZE GPUs into $DP_SIZE groups)."
+fi
 GPU_VIS="${ROCR_VISIBLE_DEVICES:-${HIP_VISIBLE_DEVICES:-${CUDA_VISIBLE_DEVICES:-}}}"
 alloc_count=""
 if [[ -n "$GPU_VIS" ]]; then
@@ -244,8 +250,8 @@ elif [[ -n "${SLURM_GPUS_ON_NODE:-}" ]]; then
     alloc_count="$SLURM_GPUS_ON_NODE"
 fi
 [[ -n "$GPU_VIS" ]] && log "Allocated GPUs: [$GPU_VIS]"
-if [[ -n "$alloc_count" && "$alloc_count" -gt 0 && "$WORLD" -ne "$alloc_count" ]]; then
-    warn "TP_SIZE*DP_SIZE=$WORLD but $alloc_count GPU(s) allocated — SGLang needs exactly $WORLD. Adjust TP_SIZE/DP_SIZE or your --gres. (An MI355X node = 8 GPUs -> TP_SIZE=4, DP_SIZE=2.)"
+if [[ -n "$alloc_count" && "$alloc_count" -gt 0 && "$GPUS_USED" -ne "$alloc_count" ]]; then
+    warn "TP_SIZE=$TP_SIZE uses $GPUS_USED GPU(s) but $alloc_count are allocated — you'd leave $((alloc_count - GPUS_USED)) idle (or over-subscribe). Set TP_SIZE=$alloc_count to use them all. (An MI355X node = 8 GPUs -> TP_SIZE=8.)"
 fi
 
 # Port free?
@@ -292,7 +298,7 @@ gpu_env=()
 [[ -n "${HIP_VISIBLE_DEVICES:-}"  ]] && gpu_env+=(--env "HIP_VISIBLE_DEVICES=$HIP_VISIBLE_DEVICES")
 [[ -n "${CUDA_VISIBLE_DEVICES:-}" ]] && gpu_env+=(--env "CUDA_VISIBLE_DEVICES=$CUDA_VISIBLE_DEVICES")
 
-log "Starting SGLang: $MODEL_ID  (TP=$TP_SIZE, DP=$DP_SIZE, world=$WORLD, ctx=$CONTEXT_LEN, port=$PORT)"
+log "Starting SGLang: $MODEL_ID  (TP=$TP_SIZE -> $GPUS_USED GPUs, DP=$DP_SIZE, ctx=$CONTEXT_LEN, port=$PORT)"
 log "Image: $SIF_PATH"
 log "Logs:  $LOG_FILE"
 
