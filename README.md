@@ -1,18 +1,18 @@
 # GLM-5.2 on Bunya's AMD MI355X — SGLang serving for opencode
 
 Serve [GLM-5.2](https://huggingface.co/amd/GLM-5.2-MXFP4) from Bunya's 8× AMD
-**MI355X** node (`bun161`), in an **Apptainer** container, via **SGLang**,
+**MI355X** nodes (`bun159`/`bun160`/`bun161`), in an **Apptainer** container, via **SGLang**,
 exposing an OpenAI-compatible endpoint you can drive with
 [opencode](https://opencode.ai) — from the node itself, the login node, your
 laptop over SSH, or (optionally) anyone over a public HTTPS tunnel.
 
 Modeled on [wafer.ai's GLM-5.2-on-AMD writeup](https://www.wafer.ai/blog/glm52-amd)
-and the [UQ-RCC Bunya docs](https://github.com/UQ-RCC/hpc-docs). Targets
-`bun161`: 8× MI355X (gfx950, 288 GB HBM3 each), EPYC5/Turin, Rocky Linux 9a,
-Apptainer 1.3.
+and the [UQ-RCC Bunya docs](https://github.com/UQ-RCC/hpc-docs). Targets Bunya's
+MI355X nodes (`bun159`/`bun160`/`bun161`): 8× MI355X each (gfx950, 288 GB HBM3),
+EPYC5/Turin, Rocky Linux 9a, Apptainer 1.3.
 
-This README is a complete walkthrough — with a Bunya account and access to
-`bun161`, you can go from clone to a working coding endpoint top to bottom.
+This README is a complete walkthrough — with a Bunya account and access to an
+MI355X node, you can go from clone to a working coding endpoint top to bottom.
 
 > **Coming from the MI325X repo?** This is the Bunya sibling. The big changes:
 > **Apptainer instead of podman**, the **MXFP4** model + `mi35x` image (gfx950),
@@ -48,9 +48,11 @@ the FP8 variant instead — see [Running on MI300X/MI325X](#running-on-mi300xmi3
 - **Apptainer, not podman**, and it lives **only on compute nodes** — never the
   login nodes. So `pull`, `download`, and `serve` all run inside a
   `salloc`/`sbatch` allocation.
-- **bun161 is the only MI355X node**, and it currently sits in the **`admin_test`**
-  partition (not `gpu_rocm`). Submit with `--partition=admin_test --account=a_rcc
-  --qos=sdf --gres=gpu:mi355x:8`.
+- **The MI355X nodes are `bun159`, `bun160`, `bun161`**, and they currently sit in
+  the **`admin_test`** partition (not `gpu_rocm`). Submit with
+  `--partition=admin_test --account=a_rcc --qos=sdf --gres=gpu:mi355x:8` — the
+  scheduler lands you on whichever is free; the serve banner prints the actual
+  hostname to use for tunnels.
 - **Run from `/scratch`** (`/scratch/user/$USER/...`), not `/home` (tight quota)
   and not `/QRISdata` (RDM — jobs can't be submitted from there). Check quota
   with `rquota`.
@@ -72,7 +74,7 @@ scontrol show node bun161 | grep -iE 'Gres|Partitions|State'
 ## Prerequisites
 
 - **A Bunya account** with the `a_rcc` scheduling account and access to the
-  `admin_test` partition / `sdf` QoS that reaches `bun161` (this node is a
+  `admin_test` partition / `sdf` QoS that reaches the MI355X nodes (these are a
   special allocation — confirm with `rcc-support@uq.edu.au` if `salloc` is
   rejected).
 - **Scratch space** with **~450 GB free** for the MXFP4 weights (~380 GB) plus
@@ -127,16 +129,18 @@ At minimum set two values:
 
 - `MODEL_CACHE_DIR` — an absolute scratch path, e.g.
   `/scratch/user/$USER/glm52/hf-cache`. This holds the ~380 GB of weights, the
-  `.sif`, the API key, and the server log/PID. It must be writable from `bun161`.
+  `.sif`, the API key, and the server log/PID. It must be writable from the
+  compute node.
 - `HF_TOKEN` — your HuggingFace token. (Or leave it blank and set `HF_TOKEN_FILE`
   to a path containing just the token.)
 
 Everything else defaults to the correct MI355X recipe (see
 [Configuration reference](#configuration-reference)).
 
-### Step 2 — Allocate bun161
+### Step 2 — Allocate an MI355X node
 
-Apptainer isn't on the login nodes, so grab the node first:
+Apptainer isn't on the login nodes, so grab a node first (the `--gres` lands you
+on a free MI355X node — `bun159`, `bun160`, or `bun161`):
 
 ```bash
 salloc --partition=admin_test --account=a_rcc --qos=sdf --nodes=1 \
@@ -145,7 +149,8 @@ salloc --partition=admin_test --account=a_rcc --qos=sdf --nodes=1 \
   srun --export=ALL --pty /bin/bash -l
 ```
 
-You're now on `bun161`. `cd` back to the repo (`cd /scratch/user/$USER/glm52-bunya`).
+You're now on an MI355X node (`hostname` tells you which). `cd` back to the repo
+(`cd /scratch/user/$USER/glm52-bunya`).
 
 ### Step 3 — Build the image + fetch the weights (first time)
 
@@ -209,7 +214,7 @@ prints the block to paste). The config references `{env:SGLANG_API_KEY}`, so
 export that variable in the shell that launches opencode. Then restart opencode
 and pick **GLM 5.2 (Bunya MI355X)** via `/models`.
 
-**A) On bun161 itself** (simplest — pairs with `serve --detach`). Open a second
+**A) On the GPU node itself** (simplest — pairs with `serve --detach`). Open a second
 shell into the running job, then set up opencode there:
 
 ```bash
@@ -224,8 +229,8 @@ opencode
 **B) On your laptop** (tunnel through the login node — works everywhere):
 
 ```bash
-# in one terminal, keep this open:
-ssh -N -L 30000:bun161:30000 <user>@bunya1.rcc.uq.edu.au
+# in one terminal, keep this open (<node> = the hostname the serve banner printed):
+ssh -N -L 30000:<node>:30000 <user>@bunya1.rcc.uq.edu.au
 
 # in another: (grab the key value from the cluster first)
 ./opencode-setup.sh --host localhost --api-key <key>
@@ -250,7 +255,7 @@ scancel <jobid>              # for a batch job
 
 `share-glm52.sh` exposes the running endpoint over public HTTPS via a
 **Cloudflare quick tunnel** — outbound-only, no root, no Cloudflare account. Run
-it on bun161 after the server is up:
+it on the GPU node after the server is up:
 
 ```bash
 ./share-glm52.sh share --detach     # prints https://<random>.trycloudflare.com
@@ -328,7 +333,7 @@ All knobs live in `glm52.env` (copied from `glm52-env.example`). Anything you
 | `READY_TIMEOUT` | `7200` | Seconds to wait for health before giving up |
 | `EXTRA_SGLANG_ARGS` | — | Extra flags appended verbatim to `sglang.launch_server` |
 
-`TP_SIZE × DP_SIZE` must equal the number of GPUs you allocate (**8** on bun161).
+`TP_SIZE × DP_SIZE` must equal the number of GPUs you allocate (**8** on an MI355X node).
 The script warns if they don't match your allocation.
 
 ---

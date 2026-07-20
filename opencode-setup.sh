@@ -2,12 +2,12 @@
 #
 # opencode-setup.sh — point opencode at the GLM-5.2 SGLang endpoint on Bunya.
 #
-# Run this wherever opencode runs: the GPU node itself (bun161), the login
-# node, or your laptop (with an SSH tunnel to the node).
+# Run this wherever opencode runs: the GPU node itself (bun159/160/161), the
+# login node, or your laptop (with an SSH tunnel to the node).
 #
 # Usage:
 #   ./opencode-setup.sh                          # endpoint on localhost:30000
-#   ./opencode-setup.sh --host bun161 --port 30000
+#   ./opencode-setup.sh --host bun159 --port 30000
 #   ./opencode-setup.sh --host localhost --api-key sk-...   # laptop w/ tunnel
 #
 # The generated provider references {env:SGLANG_API_KEY}, so opencode reads
@@ -95,7 +95,7 @@ fi
 if [[ "$HOST" == "localhost" || "$HOST" == "127.0.0.1" ]]; then
     echo
     echo "If opencode runs on a different machine than the server, keep a tunnel open:"
-    echo "  ssh -N -L $PORT:bun161:$PORT \${USER}@bunya1.rcc.uq.edu.au"
+    echo "  ssh -N -L $PORT:<gpu-node>:$PORT \${USER}@bunya1.rcc.uq.edu.au   # <gpu-node> = bun159/160/161"
 fi
 echo
 echo "Then restart opencode and select the model via /models -> 'GLM 5.2 (Bunya MI355X)'."

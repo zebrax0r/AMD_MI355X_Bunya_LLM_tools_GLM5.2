@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
-# serve-glm52.sh — one-click GLM-5.2 serving on Bunya's AMD MI355X node
-# (bun161, 8x gfx950) via SGLang inside an Apptainer container.
+# serve-glm52.sh — one-click GLM-5.2 serving on Bunya's AMD MI355X nodes
+# (bun159/160/161, 8x gfx950) via SGLang inside an Apptainer container.
 #
 # Usage:
 #   ./serve-glm52.sh [serve]     start the server (default; runs until killed)
@@ -229,7 +229,7 @@ if command -v rocminfo >/dev/null 2>&1; then
     esac
 fi
 
-# World size = tensor-parallel x data-parallel. On bun161 that's 4x2 = 8 GPUs.
+# World size = tensor-parallel x data-parallel. On an MI355X node that's 4x2 = 8 GPUs.
 WORLD=$(( TP_SIZE * DP_SIZE ))
 GPU_VIS="${ROCR_VISIBLE_DEVICES:-${HIP_VISIBLE_DEVICES:-${CUDA_VISIBLE_DEVICES:-}}}"
 alloc_count=""
@@ -240,7 +240,7 @@ elif [[ -n "${SLURM_GPUS_ON_NODE:-}" ]]; then
 fi
 [[ -n "$GPU_VIS" ]] && log "Allocated GPUs: [$GPU_VIS]"
 if [[ -n "$alloc_count" && "$alloc_count" -gt 0 && "$WORLD" -ne "$alloc_count" ]]; then
-    warn "TP_SIZE*DP_SIZE=$WORLD but $alloc_count GPU(s) allocated — SGLang needs exactly $WORLD. Adjust TP_SIZE/DP_SIZE or your --gres. (bun161 = 8 GPUs -> TP_SIZE=4, DP_SIZE=2.)"
+    warn "TP_SIZE*DP_SIZE=$WORLD but $alloc_count GPU(s) allocated — SGLang needs exactly $WORLD. Adjust TP_SIZE/DP_SIZE or your --gres. (An MI355X node = 8 GPUs -> TP_SIZE=4, DP_SIZE=2.)"
 fi
 
 # Port free?

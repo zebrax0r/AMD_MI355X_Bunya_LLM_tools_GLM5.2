@@ -10,7 +10,7 @@
 #
 # NOTE (Bunya): this needs the compute node to have outbound internet — the
 # same path the HF weights download uses. If that's blocked, use the SSH
-# tunnel instead:  ssh -N -L 30000:bun161:30000 $USER@bunya1.rcc.uq.edu.au
+# tunnel instead:  ssh -N -L 30000:<gpu-node>:30000 $USER@bunya1.rcc.uq.edu.au
 #
 # Usage:
 #   ./share-glm52.sh                 start a tunnel, stay attached (Ctrl-C stops)
