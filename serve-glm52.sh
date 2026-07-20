@@ -63,6 +63,14 @@ ENABLE_AITER_ALLREDUCE_FUSION="${ENABLE_AITER_ALLREDUCE_FUSION:-1}"
 # cgroup that only owns a subset of cores ("CPU number N is not eligible").
 # Default it OFF; set to 1 only if you allocate the whole node's CPUs.
 SET_CPU_AFFINITY="${SET_CPU_AFFINITY:-0}"
+# Optional performance knobs (see the README "Performance tuning" section). Left
+# empty by default so the baseline launch command is unchanged; set any of them
+# in glm52.env to append the corresponding SGLang flag. Benchmark with
+# ./bench-glm52.sh before/after.
+SCHEDULE_POLICY="${SCHEDULE_POLICY:-}"          # e.g. lpm (prefix reuse, great for agentic)
+CHUNKED_PREFILL_SIZE="${CHUNKED_PREFILL_SIZE:-}"
+MAX_RUNNING_REQUESTS="${MAX_RUNNING_REQUESTS:-}"
+CUDA_GRAPH_MAX_BS="${CUDA_GRAPH_MAX_BS:-}"
 READY_TIMEOUT="${READY_TIMEOUT:-7200}"
 EXTRA_SGLANG_ARGS="${EXTRA_SGLANG_ARGS:-}"
 MODEL_CACHE_DIR="${MODEL_CACHE_DIR:-}"
@@ -288,6 +296,13 @@ if [[ "${DP_SIZE:-1}" -gt 1 ]]; then
     dp_flag=(--dp "$DP_SIZE" --enable-dp-attention)
 fi
 
+# Optional perf flags — appended only when the corresponding env var is set.
+perf_flags=()
+[[ -n "$SCHEDULE_POLICY"      ]] && perf_flags+=(--schedule-policy "$SCHEDULE_POLICY")
+[[ -n "$CHUNKED_PREFILL_SIZE" ]] && perf_flags+=(--chunked-prefill-size "$CHUNKED_PREFILL_SIZE")
+[[ -n "$MAX_RUNNING_REQUESTS" ]] && perf_flags+=(--max-running-requests "$MAX_RUNNING_REQUESTS")
+[[ -n "$CUDA_GRAPH_MAX_BS"    ]] && perf_flags+=(--cuda-graph-max-bs "$CUDA_GRAPH_MAX_BS")
+
 # shellcheck disable=SC2206  # intentional word splitting of user-provided extra args
 extra_args=($EXTRA_SGLANG_ARGS)
 
@@ -335,6 +350,7 @@ apptainer exec --rocm \
         --api-key "$SGLANG_API_KEY" \
         --trust-remote-code \
         "${aiter_flag[@]}" \
+        ${perf_flags[@]+"${perf_flags[@]}"} \
         ${extra_args[@]+"${extra_args[@]}"} \
     >>"$LOG_FILE" 2>&1 &
 SERVER_PID=$!

@@ -1,5 +1,6 @@
 glm52.env
 logs/
+bench/
 *.bak
 *.sif
 cloudflared/

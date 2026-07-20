@@ -84,5 +84,25 @@ export SET_CPU_AFFINITY="${SET_CPU_AFFINITY:-0}"
 # weights unless you prefetched with './serve-glm52.sh download').
 export READY_TIMEOUT="${READY_TIMEOUT:-7200}"
 
+# ── Performance tuning (optional; all empty = baseline) ─────────────────────
+# Measure every change with ./bench-glm52.sh. See the README "Performance
+# tuning" section. Left empty here so the default launch command is unchanged.
+
+# --schedule-policy. "lpm" (longest-prefix-match) reuses shared prefixes — great
+# for agentic/opencode sessions that resend similar context.
+export SCHEDULE_POLICY="${SCHEDULE_POLICY:-}"
+
+# --chunked-prefill-size / --max-running-requests / --cuda-graph-max-bs.
+# Raise mem-fraction (above) toward ~0.9 for more KV cache if you have headroom
+# (watch avail mem in the log). Lower chunked-prefill / max-running-requests if
+# you hit OOM.
+export CHUNKED_PREFILL_SIZE="${CHUNKED_PREFILL_SIZE:-}"
+export MAX_RUNNING_REQUESTS="${MAX_RUNNING_REQUESTS:-}"
+export CUDA_GRAPH_MAX_BS="${CUDA_GRAPH_MAX_BS:-}"
+
+# MoE expert-parallelism / all-to-all backend are image-version-specific; trial
+# them via EXTRA_SGLANG_ARGS and confirm names with `--help`, e.g.:
+#   export EXTRA_SGLANG_ARGS="--ep-size 8 --moe-a2a-backend deepep"
+
 # Extra flags appended verbatim to sglang.launch_server.
 export EXTRA_SGLANG_ARGS="${EXTRA_SGLANG_ARGS:-}"

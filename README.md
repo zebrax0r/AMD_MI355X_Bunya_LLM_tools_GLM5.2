@@ -99,6 +99,7 @@ scontrol show node bun161 | grep -iE 'Gres|Partitions|State'
 | `opencode-setup.sh` | Writes/merges the opencode provider config on any machine |
 | `opencode.glm52.json` | The provider template `opencode-setup.sh` fills in |
 | `share-glm52.sh` | Optional: public HTTPS tunnel via Cloudflare for users without SSH |
+| `bench-glm52.sh` | Benchmark tok/s / latency (`sglang.bench_serving`) to compare configs — see [Performance tuning](#performance-tuning) |
 | `README.md` | This file |
 
 Secrets never live in the repo: `glm52.env` (your HF token), the generated API
@@ -296,6 +297,10 @@ opencode, and picks **GLM 5.2 (shared)** via `/models`. Manage with
 ./share-glm52.sh [share]         open a public HTTPS Cloudflare tunnel (add --detach to background)
 ./share-glm52.sh stop            take the tunnel offline
 ./share-glm52.sh status          tunnel state + current public URL
+
+./bench-glm52.sh [sweep]         measure tok/s: latency (c=1) + concurrency sweep (default)
+./bench-glm52.sh latency         single-stream latency only
+./bench-glm52.sh throughput      saturate at BENCH_MAX_CONCURRENCY
 ```
 
 Handy extras:
@@ -328,10 +333,15 @@ All knobs live in `glm52.env` (copied from `glm52-env.example`). Anything you
 | `TP_SIZE` | `8` | Tensor-parallel degree = **total GPUs used** (8 = whole node) |
 | `DP_SIZE` | `1` | dp-attention groups; `>1` adds `--dp N --enable-dp-attention` and must divide `TP_SIZE` (does *not* change the GPU count) |
 | `CONTEXT_LEN` | `262144` | Max context length |
-| `MEM_FRACTION` | `0.85` | SGLang `--mem-fraction-static` |
+| `MEM_FRACTION` | `0.85` | SGLang `--mem-fraction-static` (raise toward `0.9` for more KV cache if you have headroom) |
 | `ENABLE_AITER_ALLREDUCE_FUSION` | `1` | Toggle `--enable-aiter-allreduce-fusion` (set `0` if allreduce crashes) |
+| `SET_CPU_AFFINITY` | `0` | `SGLANG_SET_CPU_AFFINITY`; keep `0` on a SLURM cgroup (see troubleshooting) |
+| `SCHEDULE_POLICY` | — | `--schedule-policy` (set `lpm` for prefix reuse — good for agentic) |
+| `CHUNKED_PREFILL_SIZE` | — | `--chunked-prefill-size` (lower if OOM in prefill) |
+| `MAX_RUNNING_REQUESTS` | — | `--max-running-requests` (lower if OOM in decode) |
+| `CUDA_GRAPH_MAX_BS` | — | `--cuda-graph-max-bs` (raise for more concurrency, costs memory) |
 | `READY_TIMEOUT` | `7200` | Seconds to wait for health before giving up |
-| `EXTRA_SGLANG_ARGS` | — | Extra flags appended verbatim to `sglang.launch_server` |
+| `EXTRA_SGLANG_ARGS` | — | Extra flags appended verbatim to `sglang.launch_server` (e.g. `--ep-size 8 --moe-a2a-backend deepep`) |
 
 **`TP_SIZE` is the total GPU count** — set it to the number of GPUs you allocate
 (**8** on an MI355X node). `DP_SIZE` only matters for dp-attention: it splits
@@ -341,6 +351,71 @@ the default and best for a single latency-sensitive opencode session; for
 high-concurrency throughput try `TP_SIZE=8 DP_SIZE=2`. The script warns if
 `TP_SIZE` doesn't match your allocation (e.g. `TP_SIZE=4` on an 8-GPU node leaves
 4 idle — which is the trap the earlier `TP4×DP2` default fell into).
+
+---
+
+## Performance tuning
+
+Everything here is **measurement-driven** — change one thing, re-run
+`./bench-glm52.sh`, keep it only if the numbers improve. Run the benchmark from a
+shell on the serving node (`srun --overlap --jobid <jobid> --pty /bin/bash -l`)
+while the server is up:
+
+```bash
+./bench-glm52.sh sweep      # latency (c=1) + a concurrency sweep; saves to $MODEL_CACHE_DIR/bench/
+```
+
+**How to read the output** (from `sglang.bench_serving`): *Output token
+throughput* (tok/s — the headline for aggregate throughput), *Mean/Median TTFT*
+(time-to-first-token — interactivity), *Median ITL/TPOT* (inter-token latency —
+single-stream speed). In the **server** log, healthy signs are `token usage`
+> 0.9 and `#queue-req` staying in the hundreds.
+
+Reference numbers for GLM-5.2-MXFP4 on an 8× MI355X node (SemiAnalysis/wafer.ai):
+heuristic-fallback MoE ≈ **1461 tok/s/node**, data-parallel layout ≈ **1944**
+(2.0 RPS), tuned MoE kernel ≈ **2626** (2.4 RPS). In order of payoff:
+
+### 1. Get onto the tuned MXFP4 MoE kernel (the ~+80% win)
+
+`bench-glm52.sh` warns if your server log has `no tuned FlyDSL config … heuristic
+FlyDSL fallback` — that means the MoE is JIT-falling-back to a slow generic
+kernel instead of one tuned for GLM's FP4 shapes. The pinned image is on that
+fallback. Newer `sglang-rocm`/aiter builds ship tuned MXFP4 configs, so **trial a
+newer image** — reversibly, keeping the known-good one as fallback:
+
+```bash
+# in glm52.env, point at a fresh sif so the working one is preserved:
+export SGLANG_IMAGE="docker://lmsysorg/sglang-rocm:<newer-tag>"
+export SIF_PATH="$MODEL_CACHE_DIR/glm52-mi355x-new.sif"
+./serve-glm52.sh pull && ./serve-glm52.sh stop && ./serve-glm52.sh serve --detach
+./bench-glm52.sh sweep      # did the FlyDSL warning disappear? did tok/s jump?
+```
+
+If it regresses or reintroduces instability, revert those two vars. (If no image
+ships the tuned config, generating one with aiter's MoE autotuning for your
+shapes — `model_dim 6144, moe_inter 2048, E=256, topk=8` — is the DIY route, but
+it's an hours-long autotune; treat as future work.)
+
+### 2. Parallelism layout — bench each, pick from numbers
+
+Same 8 GPUs, different split. Restart serve between each and bench:
+
+| Config | `glm52.env` | Best for |
+|---|---|---|
+| Pure TP8 | `TP_SIZE=8 DP_SIZE=1` | single-session latency (default) |
+| DP-attention | `TP_SIZE=8 DP_SIZE=2` (or `8`) | MLA throughput (GLM is MLA-based; note SGLang marks this "not yet validated on AMD" — verify) |
+| Expert-parallel | `EXTRA_SGLANG_ARGS="--ep-size 8 --moe-a2a-backend deepep"` | MoE aggregate throughput (confirm flag/backend with `--help`) |
+
+### 3. Serving knobs (cheap, safe to sweep)
+
+- `SCHEDULE_POLICY=lpm` — prefix reuse; big for agentic/opencode where context repeats.
+- `MEM_FRACTION=0.9` — more KV cache (you had ~37 GB/GPU free at 0.85). Watch avail mem in the log.
+- `MAX_RUNNING_REQUESTS`, `CHUNKED_PREFILL_SIZE`, `CUDA_GRAPH_MAX_BS` — raise for concurrency; lower the first two if you OOM.
+
+### 4. Not worth it on AMD yet
+
+MTP/EAGLE **speculative decoding** and **context-parallel** are explicitly not
+validated on ROCm for this model — skip them for now.
 
 ---
 
@@ -429,6 +504,9 @@ you of this. (For a fuller gfx942 treatment see the MI325X sibling repo.)
 - [wafer.ai: GLM 5.2 on AMD](https://www.wafer.ai/blog/glm52-amd) — MXFP4/MI355X reference numbers (213 tok/s single stream, 2626 tok/s/node at TP4×DP2)
 - [UQ-RCC Bunya docs](https://github.com/UQ-RCC/hpc-docs) — Apptainer, SLURM, GPU partitions, filesystems
 - [SGLang cookbook: GLM-5.2](https://docs.sglang.io/cookbook/autoregressive/GLM/GLM-5.2) — pinned ROCm images, parser flags, AMD caveats
+- [SGLang hyperparameter tuning guide](https://docs.sglang.io/advanced_features/hyperparameter_tuning.html) — mem-fraction, schedule policy, chunked prefill, cuda-graph bs
+- [SemiAnalysis InferenceX: MI355X GLM-5 on SGLang](https://inferencex.semianalysis.com/blog/mi355x-glm5-fp8-sglang-40-cheaper-than-b200) · [AMD: MI355X + SGLang MoRI](https://www.amd.com/en/developer/resources/technical-articles/2026/win-on-tco.html) — tok/s numbers, MoE FP4 tuning, fused MLA
+- [ROCm/aiter](https://github.com/ROCm/aiter) — MoE/GEMM kernels + tuned MXFP4 configs
 - [amd/GLM-5.2-MXFP4](https://huggingface.co/amd/GLM-5.2-MXFP4) · [zai-org/GLM-5.2-FP8](https://huggingface.co/zai-org/GLM-5.2-FP8)
 - [opencode custom providers](https://opencode.ai/docs/providers/)
 
