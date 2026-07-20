@@ -401,6 +401,16 @@ you of this. (For a fuller gfx942 treatment see the MI325X sibling repo.)
   ```
   It recompiles cleanly on first use (adds ~a minute). Note this cache also eats
   your home file-quota — see `rquota`.
+- **Crash: `[Errno 30] Read-only file system: '/sgl-workspace/.../flydsl_cache/...'`**:
+  the MXFP4 MoE JIT-compiles FlyDSL kernels and tries to cache them *inside* the
+  image, but an Apptainer `.sif` is read-only (unlike a podman/Docker image's
+  writable layer). The script binds a writable scratch dir (`FLYDSL_CACHE_DIR`,
+  default `$MODEL_CACHE_DIR/flydsl-cache`) over that path. On an older copy,
+  replicate it with:
+  ```bash
+  mkdir -p $MODEL_CACHE_DIR/flydsl-cache
+  export APPTAINER_BIND="$MODEL_CACHE_DIR/flydsl-cache:/sgl-workspace/aiter/aiter/jit/flydsl_cache"
+  ```
 - **No speculative decoding**: MTP/EAGLE draft kernels aren't validated on ROCm
   for this model yet, so no `--speculative-*` flags are passed.
 - **`--enable-aiter-allreduce-fusion`** comes from the wafer.ai post. If you hit

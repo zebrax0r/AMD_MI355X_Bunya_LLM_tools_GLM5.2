@@ -298,6 +298,15 @@ gpu_env=()
 [[ -n "${HIP_VISIBLE_DEVICES:-}"  ]] && gpu_env+=(--env "HIP_VISIBLE_DEVICES=$HIP_VISIBLE_DEVICES")
 [[ -n "${CUDA_VISIBLE_DEVICES:-}" ]] && gpu_env+=(--env "CUDA_VISIBLE_DEVICES=$CUDA_VISIBLE_DEVICES")
 
+# The MXFP4 MoE JIT-compiles FlyDSL kernels at runtime and tries to cache them
+# INSIDE the image (/sgl-workspace/.../flydsl_cache) — but an Apptainer .sif is
+# read-only, so that write fails ("Read-only file system"). Bind a writable
+# scratch dir over that path (persists compiled kernels across runs, too).
+FLYDSL_CACHE_DIR="${FLYDSL_CACHE_DIR:-$MODEL_CACHE_DIR/flydsl-cache}"
+FLYDSL_CACHE_TARGET="${FLYDSL_CACHE_TARGET:-/sgl-workspace/aiter/aiter/jit/flydsl_cache}"
+mkdir -p "$FLYDSL_CACHE_DIR" 2>/dev/null || true
+cache_bind=(--bind "$FLYDSL_CACHE_DIR":"$FLYDSL_CACHE_TARGET")
+
 log "Starting SGLang: $MODEL_ID  (TP=$TP_SIZE -> $GPUS_USED GPUs, DP=$DP_SIZE, ctx=$CONTEXT_LEN, port=$PORT)"
 log "Image: $SIF_PATH"
 log "Logs:  $LOG_FILE"
@@ -305,6 +314,7 @@ log "Logs:  $LOG_FILE"
 : > "$LOG_FILE"
 apptainer exec --rocm \
     --bind "$MODEL_CACHE_DIR":"$MODEL_CACHE_DIR" \
+    "${cache_bind[@]}" \
     --env HF_HOME="$MODEL_CACHE_DIR" \
     --env HF_TOKEN="${HF_TOKEN:-}" \
     --env HF_HUB_ENABLE_HF_TRANSFER=1 \

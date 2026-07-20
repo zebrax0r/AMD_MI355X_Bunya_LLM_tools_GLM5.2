@@ -34,6 +34,13 @@ export SIF_PATH="${SIF_PATH:-}"
 export APPTAINER_CACHEDIR="${APPTAINER_CACHEDIR:-}"
 export APPTAINER_TMPDIR="${APPTAINER_TMPDIR:-}"
 
+# The MXFP4 MoE JIT-compiles FlyDSL kernels into a path INSIDE the image, which
+# is read-only in a .sif. serve-glm52.sh binds this scratch dir over that path
+# so the writes succeed (and compiled kernels persist across runs). Defaults to
+# $MODEL_CACHE_DIR/flydsl-cache. Override the in-image target with
+# FLYDSL_CACHE_TARGET if a future image moves it.
+export FLYDSL_CACHE_DIR="${FLYDSL_CACHE_DIR:-}"
+
 # ── Endpoint auth ───────────────────────────────────────────────────────────
 
 # API key for the SGLang endpoint (sent by clients as "Authorization: Bearer ...").
