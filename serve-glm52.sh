@@ -58,6 +58,11 @@ DP_SIZE="${DP_SIZE:-2}"
 CONTEXT_LEN="${CONTEXT_LEN:-262144}"
 MEM_FRACTION="${MEM_FRACTION:-0.85}"
 ENABLE_AITER_ALLREDUCE_FUSION="${ENABLE_AITER_ALLREDUCE_FUSION:-1}"
+# The sglang-rocm image sets SGLANG_SET_CPU_AFFINITY=1, but SGLang then pins
+# workers to CPUs derived from the FULL node topology — which fail under a SLURM
+# cgroup that only owns a subset of cores ("CPU number N is not eligible").
+# Default it OFF; set to 1 only if you allocate the whole node's CPUs.
+SET_CPU_AFFINITY="${SET_CPU_AFFINITY:-0}"
 READY_TIMEOUT="${READY_TIMEOUT:-7200}"
 EXTRA_SGLANG_ARGS="${EXTRA_SGLANG_ARGS:-}"
 MODEL_CACHE_DIR="${MODEL_CACHE_DIR:-}"
@@ -297,6 +302,7 @@ apptainer exec --rocm \
     --env HF_HOME="$MODEL_CACHE_DIR" \
     --env HF_TOKEN="${HF_TOKEN:-}" \
     --env HF_HUB_ENABLE_HF_TRANSFER=1 \
+    --env SGLANG_SET_CPU_AFFINITY="$SET_CPU_AFFINITY" \
     ${gpu_env[@]+"${gpu_env[@]}"} \
     "$SIF_PATH" \
     python3 -m sglang.launch_server \

@@ -64,6 +64,12 @@ export MEM_FRACTION="${MEM_FRACTION:-0.85}"
 # Set to 0 if you see NCCL/RCCL or allreduce-related crashes.
 export ENABLE_AITER_ALLREDUCE_FUSION="${ENABLE_AITER_ALLREDUCE_FUSION:-1}"
 
+# SGLang CPU-affinity pinning. The container image enables it, but it pins to
+# CPUs from the full node topology and CRASHES under a SLURM cgroup that owns
+# only a subset of cores ("CPU number N is not eligible"). Keep 0 unless you
+# allocate the whole node's CPUs (e.g. --exclusive or --cpus-per-task=384).
+export SET_CPU_AFFINITY="${SET_CPU_AFFINITY:-0}"
+
 # Seconds to wait for the server to come up (first run downloads ~380 GB of
 # weights unless you prefetched with './serve-glm52.sh download').
 export READY_TIMEOUT="${READY_TIMEOUT:-7200}"

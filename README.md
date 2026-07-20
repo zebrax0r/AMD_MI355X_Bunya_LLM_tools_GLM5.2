@@ -373,6 +373,14 @@ you of this. (For a fuller gfx942 treatment see the MI325X sibling repo.)
 - **`salloc` rejected**: verify the recipe is still current (`sinfo`/`sacctmgr`
   commands above). `admin_test` is a restricted partition; if access was revoked,
   ask `rcc-support@uq.edu.au`.
+- **Crash: "CPU number N is not eligible; choose between [...]"** (in
+  `set_gpu_proc_affinity`): the image enables `SGLANG_SET_CPU_AFFINITY=1`, but
+  SGLang pins workers to CPUs from the *full* node topology, which fail under a
+  SLURM cgroup that only owns a subset of cores. The script forces
+  `SGLANG_SET_CPU_AFFINITY=0` (`SET_CPU_AFFINITY` env) so this is handled by
+  default. If you're on an older copy, either update or run with
+  `export APPTAINERENV_SGLANG_SET_CPU_AFFINITY=0` before `serve`, or allocate the
+  whole node's CPUs (`--cpus-per-task=384` / `--exclusive`).
 - **No speculative decoding**: MTP/EAGLE draft kernels aren't validated on ROCm
   for this model yet, so no `--speculative-*` flags are passed.
 - **`--enable-aiter-allreduce-fusion`** comes from the wafer.ai post. If you hit
