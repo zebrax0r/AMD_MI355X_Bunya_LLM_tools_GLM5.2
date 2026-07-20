@@ -1,0 +1,69 @@
+# Configuration for serve-glm52.sh on Bunya's MI355X — copy to glm52.env and edit.
+#
+#   cp glm52-env.example glm52.env
+#
+# Every value uses the ${VAR:-default} form, so anything you export in your
+# shell (or in an sbatch --export) takes precedence over this file.
+# glm52.env contains your HF token — keep it out of git (see .gitignore).
+
+# ── Required ────────────────────────────────────────────────────────────────
+
+# Scratch path for the HuggingFace cache. GLM-5.2-MXFP4 weights are ~380 GB, so
+# point this at /scratch (NOT /home — it has a tight quota). Must be visible from
+# the compute node (bun161). The API key and server PID/log live here too.
+export MODEL_CACHE_DIR="${MODEL_CACHE_DIR:-}"
+# e.g. export MODEL_CACHE_DIR="${MODEL_CACHE_DIR:-/scratch/user/$USER/glm52/hf-cache}"
+
+# HuggingFace token, needed for the first weights download.
+# Either set the token directly ...
+export HF_TOKEN="${HF_TOKEN:-}"
+# ... or point at a file containing only the token (safer for shared configs):
+export HF_TOKEN_FILE="${HF_TOKEN_FILE:-}"
+
+# ── Container image (.sif) ──────────────────────────────────────────────────
+
+# Where the Apptainer .sif is stored (built once with './serve-glm52.sh pull').
+# Defaults to $MODEL_CACHE_DIR/glm52-mi355x.sif if left empty.
+export SIF_PATH="${SIF_PATH:-}"
+
+# Apptainer cache/scratch. Keep these OFF /home (quota) — on scratch. Default is
+# alongside MODEL_CACHE_DIR if left empty.
+export APPTAINER_CACHEDIR="${APPTAINER_CACHEDIR:-}"
+export APPTAINER_TMPDIR="${APPTAINER_TMPDIR:-}"
+
+# ── Endpoint auth ───────────────────────────────────────────────────────────
+
+# API key for the SGLang endpoint (sent by clients as "Authorization: Bearer ...").
+# Leave empty to have serve-glm52.sh generate one and persist it to
+# ${MODEL_CACHE_DIR}/glm52-api-key so it stays stable across jobs.
+export SGLANG_API_KEY="${SGLANG_API_KEY:-}"
+
+# ── Model / image (defaults are correct for bun161 / MI355X) ────────────────
+
+export MODEL_ID="${MODEL_ID:-amd/GLM-5.2-MXFP4}"
+export SERVED_MODEL_NAME="${SERVED_MODEL_NAME:-glm-5.2}"
+export SGLANG_IMAGE="${SGLANG_IMAGE:-docker://lmsysorg/sglang-rocm:v0.5.13.post1-rocm720-mi35x-20260618}"
+
+# ── Serving parameters ──────────────────────────────────────────────────────
+
+export PORT="${PORT:-30000}"
+
+# bun161 has 8x MI355X. The wafer.ai blog validated TP4 x DP2 (+ dp-attention)
+# as the throughput config for GLM-5.2 MXFP4 on MI355X. TP_SIZE * DP_SIZE must
+# equal the number of GPUs you allocate (8). Set DP_SIZE=1 for pure TP8.
+export TP_SIZE="${TP_SIZE:-4}"
+export DP_SIZE="${DP_SIZE:-2}"
+
+export CONTEXT_LEN="${CONTEXT_LEN:-262144}"     # model supports up to 1M
+export MEM_FRACTION="${MEM_FRACTION:-0.85}"
+
+# aiter fused allreduce (from the wafer.ai blog; validated there on MI355X).
+# Set to 0 if you see NCCL/RCCL or allreduce-related crashes.
+export ENABLE_AITER_ALLREDUCE_FUSION="${ENABLE_AITER_ALLREDUCE_FUSION:-1}"
+
+# Seconds to wait for the server to come up (first run downloads ~380 GB of
+# weights unless you prefetched with './serve-glm52.sh download').
+export READY_TIMEOUT="${READY_TIMEOUT:-7200}"
+
+# Extra flags appended verbatim to sglang.launch_server.
+export EXTRA_SGLANG_ARGS="${EXTRA_SGLANG_ARGS:-}"

@@ -1,0 +1,5 @@
+glm52.env
+logs/
+*.bak
+*.sif
+cloudflared/
